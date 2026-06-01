@@ -20,6 +20,7 @@ import hmac
 import hashlib
 import secrets
 import sqlite3
+import socket
 import threading
 import webbrowser
 import mimetypes
@@ -472,20 +473,54 @@ class Server(ThreadingHTTPServer):
     allow_reuse_address = True
 
 
+def lan_ips():
+    """探测本机的局域网 IP（供同一 Wi-Fi 下的手机访问）。"""
+    ips = set()
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))  # 不会真的发包，只为拿到出口网卡 IP
+        ips.add(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith('127.'):
+                ips.add(ip)
+    except Exception:
+        pass
+    return sorted(ips)
+
+
 def main():
     init_db()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get('PORT', '8000'))
-    httpd = Server(('127.0.0.1', port), Handler)
-    url = 'http://localhost:%d' % port
-    print('=' * 48)
+    local_only = os.environ.get('LOCAL_ONLY') == '1'
+    host = '127.0.0.1' if local_only else '0.0.0.0'
+    httpd = Server((host, port), Handler)
+
+    print('=' * 52)
     print('  课时工资记录 · 本地服务已启动')
-    print('  打开：   ' + url)
-    print('  数据库： ' + DB_PATH)
-    print('  备份：   复制 data.db 即可（或在「设置」里下载）')
-    print('  停止：   按 Ctrl+C')
-    print('=' * 48)
+    print('  本机访问：   http://localhost:%d' % port)
+    if not local_only:
+        ips = lan_ips()
+        if ips:
+            print('  手机访问（同一 Wi-Fi）：')
+            for ip in ips:
+                print('               http://%s:%d' % (ip, port))
+            print('  （电脑需保持开机并运行本服务；首次可能弹出防火墙授权，请点允许）')
+        else:
+            print('  手机访问：未探测到局域网 IP，请确认已连接 Wi-Fi')
+    else:
+        print('  （仅本机模式 LOCAL_ONLY=1，手机/其他设备无法访问）')
+    print('  数据库：     ' + DB_PATH)
+    print('  备份：       复制 data.db 即可（或在「设置」里下载）')
+    print('  停止：       按 Ctrl+C')
+    print('=' * 52)
+
     if os.environ.get('NO_BROWSER') != '1':
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+        threading.Timer(0.6, lambda: webbrowser.open('http://localhost:%d' % port)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
