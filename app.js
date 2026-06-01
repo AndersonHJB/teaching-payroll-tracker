@@ -808,7 +808,7 @@ function viewSettings() {
     ${state.edit ? '<button class="btn btn-primary" data-saverates>保存单价</button>' : '<div class="muted">登录后可修改单价。</div>'}
   </div></div>`;
   const backupCard = `<div class="card"><p class="card-title">备份</p>
-    <div class="muted" style="margin-bottom:12px">数据保存在服务端的 <strong>data.db</strong>（真实 SQLite 文件）。直接复制该文件即可备份；也可点下方按钮下载一份。</div>
+    <div class="muted" style="margin-bottom:12px">数据保存在服务端的 <strong>data.db</strong>（真实 SQLite 文件）。点下方按钮下载完整备份${state.hasPassword ? '（需输入管理员密码）' : ''}。</div>
     <div class="form"><button class="btn" data-export>⬇️ 下载数据库（.db）</button></div></div>`;
   const demoCard = state.edit ? `<div class="card"><p class="card-title">演示数据</p>
     <div class="muted" style="margin-bottom:12px">载入一组示例学员与课程记录（含照片）以便体验功能；会覆盖当前数据。</div>
@@ -865,13 +865,31 @@ function bindSettings(v) {
     catch (e) { handleErr(e, '操作失败'); }
   };
 }
-async function downloadDb() {
-  toast('正在导出…');
+async function doDbDownload(pw) {
   try {
-    const res = await api('/db', { auth: true, raw: true });
-    const blob = await res.blob();
-    downloadBlob(blob, 'course-data.db');
-  } catch (e) { handleErr(e, '导出失败'); }
+    const res = await fetch('/api/db', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    if (res.status === 401) { toast('密码不正确'); return false; }
+    if (!res.ok) { toast('下载失败'); return false; }
+    downloadBlob(await res.blob(), 'course-data.db');
+    toast('已开始下载');
+    return true;
+  } catch (e) { toast('下载失败：连接不上服务'); return false; }
+}
+function downloadDb() {
+  if (!state.hasPassword) { doDbDownload(''); return; }  // 未设密码则直接下载
+  openModal('下载数据库备份', `<div class="form"><label class="field"><span class="field-label">请输入管理员密码以下载完整数据库</span><input type="password" id="dlPw" autocomplete="current-password"></label></div>`, [
+    { label: '取消', kind: 'ghost', close: true },
+    { label: '验证并下载', kind: 'primary', onClick: async (m) => {
+      const ok = await doDbDownload($('#dlPw', m).value);
+      if (!ok) return false;  // 密码错则保持弹窗
+    } },
+  ]);
+  const inp = $('#dlPw');
+  if (inp) inp.onkeydown = (e) => { if (e.key === 'Enter') { const b = $('.modal-backdrop [data-act="1"]'); if (b) b.click(); } };
 }
 async function loadDemo() {
   if (!(await confirmDialog('载入演示数据？', '会清空当前数据并写入一组示例（学员、课程、照片），仅供体验。之后可在「设置 → 清空所有数据」清掉。'))) return;

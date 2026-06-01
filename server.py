@@ -341,18 +341,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self._bytes(b'Not Found', 'text/plain', 404)
                 return self._bytes(bytes(r['data']), r['mime'] or 'image/jpeg',
                                    headers={'Cache-Control': 'public, max-age=31536000, immutable'})
-            if path == '/api/db':
-                if not self._authed(conn):
-                    return self._json({'error': 'unauthorized'}, 401)
-                try:
-                    conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-                    conn.commit()
-                except Exception:
-                    pass
-                with open(DB_PATH, 'rb') as f:
-                    data = f.read()
-                return self._bytes(data, 'application/octet-stream',
-                                   headers={'Content-Disposition': 'attachment; filename="course-data.db"'})
             return self._json({'error': 'not found'}, 404)
         finally:
             conn.close()
@@ -405,6 +393,21 @@ class Handler(BaseHTTPRequestHandler):
                 with _tokens_lock:
                     VALID_TOKENS.clear()
                 return self._json({'ok': True, 'hasPassword': False})
+
+            # 下载数据库备份：若已设密码，必须在请求体提供正确密码（每次下载都要验证）
+            if path == '/api/db' and method == 'POST':
+                stored = get_meta(conn, 'auth')
+                if stored and not verify_password(self._body().get('password', ''), stored):
+                    return self._json({'error': '密码不正确'}, 401)
+                try:
+                    conn.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                    conn.commit()
+                except Exception:
+                    pass
+                with open(DB_PATH, 'rb') as f:
+                    data = f.read()
+                return self._bytes(data, 'application/octet-stream',
+                                   headers={'Content-Disposition': 'attachment; filename="course-data.db"'})
 
             # —— 其余写操作均需鉴权 ——
             if not self._authed(conn):
