@@ -1,6 +1,15 @@
 # 本地工具 / 编辑器配置
 .claude/
 
+# 数据库（用户数据，不入库）
+data.db
+data.db-wal
+data.db-shm
+
+# Python
+__pycache__/
+*.pyc
+
 # 系统文件
 .DS_Store
 Thumbs.db
