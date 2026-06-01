@@ -198,34 +198,39 @@ function renderApp() {
   const showBack = ['sessionDetail', 'sessionEdit'].includes(state.view);
   app.innerHTML = `
     <div class="app-shell">
-      <header class="app-header">
-        <div class="hdr-l">${showBack
-          ? '<button class="hdr-back" data-back>‹ 返回</button>'
-          : `<span class="hdr-title">${titles[state.view] || ''}</span>`}</div>
-        <div class="hdr-r">${lockControlHtml()}</div>
-      </header>
-      <main class="view" id="view"></main>
-      <nav class="tabbar">
-        ${tabBtn('sessions', '📋', '记录')}
-        ${tabBtn('students', '👥', '学员')}
-        ${tabBtn('salary', '💰', '工资')}
-        ${tabBtn('settings', '⚙️', '设置')}
-      </nav>
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-ico">📋</span><span class="brand-name">课时工资</span></div>
+        <nav class="nav">
+          ${navItem('sessions', '📋', '记录')}
+          ${navItem('students', '👥', '学员')}
+          ${navItem('salary', '💰', '工资')}
+          ${navItem('settings', '⚙️', '设置')}
+        </nav>
+      </aside>
+      <div class="main-col">
+        <header class="app-header">
+          <div class="hdr-l">${showBack
+            ? '<button class="hdr-back" data-back>‹ 返回</button>'
+            : `<span class="hdr-title">${titles[state.view] || ''}</span>`}</div>
+          <div class="hdr-r">${lockControlHtml()}</div>
+        </header>
+        <main class="view view-${state.view}" id="view"></main>
+      </div>
     </div>`;
   if (showBack) $('[data-back]').onclick = onBack;
   const lb = $('[data-lock]'); if (lb) lb.onclick = onLockClick;
-  $all('.tab').forEach((t) => { t.onclick = () => go(t.dataset.view); });
+  $all('.nav-item').forEach((t) => { t.onclick = () => go(t.dataset.view); });
   renderView();
 }
-function tabBtn(view, ico, label) {
+function navItem(view, ico, label) {
   const active = tabGroup() === view ? ' active' : '';
-  return `<button class="tab${active}" data-view="${view}"><span class="ico">${ico}</span><span>${label}</span></button>`;
+  return `<button class="nav-item${active}" data-view="${view}"><span class="ico">${ico}</span><span class="lbl">${label}</span></button>`;
 }
 function lockControlHtml() {
-  if (!state.hasPassword) return '<span class="lock-tag">编辑模式</span>';
+  if (!state.hasPassword) return '<span class="lock-tag">编辑模式（未设密码）</span>';
   return state.edit
-    ? '<button class="lock-btn unlocked" data-lock>🔓 编辑中</button>'
-    : '<button class="lock-btn locked" data-lock>🔒 登录编辑</button>';
+    ? '<button class="lock-btn unlocked" data-lock>🔓 管理员</button>'
+    : '<button class="lock-btn locked" data-lock>🔒 管理员登录</button>';
 }
 function onBack() {
   let target = 'sessions';
@@ -657,16 +662,16 @@ function viewSettings() {
   const s = state.settings;
   let lockCard;
   if (!state.hasPassword) {
-    lockCard = `<div class="card"><p class="card-title">编辑密码</p>
-      <div class="banner">尚未设置密码，当前任何人打开都能编辑。设置密码后，应用默认进入「预览」模式，需登录才能修改。</div>
+    lockCard = `<div class="card"><p class="card-title">管理员密码</p>
+      <div class="banner">尚未设置管理员密码，当前任何人打开都能编辑。设置后，未登录只能查看，需管理员登录才能编辑。</div>
       <div class="form">
-        <label class="field"><span class="field-label">设置密码</span><input type="password" id="pw1" placeholder="输入密码" autocomplete="new-password"></label>
+        <label class="field"><span class="field-label">设置管理员密码</span><input type="password" id="pw1" placeholder="输入密码" autocomplete="new-password"></label>
         <label class="field"><span class="field-label">确认密码</span><input type="password" id="pw2" placeholder="再次输入" autocomplete="new-password"></label>
-        <button class="btn btn-primary" data-setpw>启用编辑锁</button>
+        <button class="btn btn-primary" data-setpw>启用管理员登录</button>
       </div></div>`;
   } else {
-    lockCard = `<div class="card"><p class="card-title">编辑密码</p>
-      <div class="muted" style="margin-bottom:12px">已启用编辑锁。打开应用默认为预览模式，点右上角「登录编辑」输入密码后可修改。</div>
+    lockCard = `<div class="card"><p class="card-title">管理员密码</p>
+      <div class="muted" style="margin-bottom:12px">已启用。未登录只能查看，点右上角「管理员登录」输入密码后可编辑。</div>
       ${state.edit ? `<div class="form">
         <label class="field"><span class="field-label">当前密码</span><input type="password" id="pwOld" autocomplete="current-password"></label>
         <label class="field"><span class="field-label">新密码（留空 = 取消密码锁）</span><input type="password" id="pwNew" autocomplete="new-password"></label>
@@ -781,7 +786,7 @@ function confirmDialog(title, msg) {
   });
 }
 function openLoginModal() {
-  openModal('登录编辑', `<div class="form"><label class="field"><span class="field-label">请输入编辑密码</span><input type="password" id="loginPw" autocomplete="current-password"></label></div>`, [
+  openModal('管理员登录', `<div class="form"><label class="field"><span class="field-label">请输入管理员密码</span><input type="password" id="loginPw" autocomplete="current-password"></label></div>`, [
     { label: '取消', kind: 'ghost', close: true },
     { label: '登录', kind: 'primary', onClick: async (m) => {
       const pw = $('#loginPw', m).value;

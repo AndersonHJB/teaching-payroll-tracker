@@ -30,19 +30,20 @@ body {
 
 .boot { padding: 40px; text-align: center; color: var(--muted); }
 
-/* ===== 外壳布局 ===== */
+/* ===== 外壳布局（移动优先） ===== */
 .app-shell {
-  max-width: 720px;
-  margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  position: relative;
 }
-@media (min-width: 760px) {
-  .app-shell { box-shadow: 0 0 0 1px var(--line); }
+.main-col {
+  order: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .app-header {
@@ -85,8 +86,9 @@ body {
   padding-bottom: 24px;
 }
 
-/* ===== 底部导航 ===== */
-.tabbar {
+/* ===== 导航（移动：底部标签栏） ===== */
+.sidebar {
+  order: 2;
   position: sticky;
   bottom: 0;
   z-index: 20;
@@ -96,7 +98,9 @@ body {
   border-top: 1px solid var(--line);
   padding-bottom: var(--safe-b);
 }
-.tab {
+.sidebar .brand { display: none; }
+.nav { display: flex; flex: 1; }
+.nav-item {
   flex: 1;
   border: none;
   background: none;
@@ -109,9 +113,82 @@ body {
   color: var(--muted);
   cursor: pointer;
 }
-.tab .ico { font-size: 20px; line-height: 1; }
-.tab.active { color: var(--primary); }
-.tab.active .ico { transform: translateY(-1px); }
+.nav-item .ico { font-size: 20px; line-height: 1; }
+.nav-item.active { color: var(--primary); }
+
+/* ===== 桌面布局（≥ 900px：左侧栏 + 宽内容区） ===== */
+@media (min-width: 900px) {
+  .app-shell {
+    display: grid;
+    grid-template-columns: 248px minmax(0, 1fr);
+    max-width: 1280px;
+    margin: 0 auto;
+    box-shadow: 0 0 0 1px var(--line);
+  }
+  .sidebar {
+    order: 0;
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    height: 100vh;
+    height: 100dvh;
+    flex-direction: column;
+    gap: 4px;
+    border-top: none;
+    border-right: 1px solid var(--line);
+    background: #fff;
+    padding: 16px 12px;
+  }
+  .sidebar .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px 18px;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--ink);
+  }
+  .brand-ico { font-size: 22px; }
+  .nav { flex-direction: column; gap: 4px; }
+  .nav-item {
+    flex: none;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    padding: 11px 12px;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .nav-item .ico { font-size: 20px; }
+  .nav-item:hover { background: #f1f5f9; }
+  .nav-item.active { background: #eef2ff; color: var(--primary); }
+
+  .main-col { min-height: 100dvh; }
+  .app-header { padding: 16px 28px; }
+  .view {
+    width: 100%;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 28px 28px 56px;
+  }
+  .view-sessionEdit,
+  .view-sessionDetail,
+  .view-settings { max-width: 720px; }
+  .view-sessionEdit > .form { max-width: 600px; margin: 0 auto; }
+  .view-settings .card .form { max-width: 460px; }
+
+  /* 记录列表：多列卡片，月份标题占整行 */
+  .view-sessions .month-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 10px;
+    align-items: start;
+  }
+  .view-sessions .month-bar { grid-column: 1 / -1; }
+  .view-sessions .session-card { margin-bottom: 0; }
+}
 
 /* ===== 卡片/通用 ===== */
 .card {
