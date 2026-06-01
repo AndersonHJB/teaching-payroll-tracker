@@ -31,10 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# 数据库位置：默认在项目目录下的 data.db；
-# 部署时建议用环境变量 PT_DB 指向仓库之外的路径（如 /var/lib/teaching-payroll/data.db），
-# 这样 git pull / git clean 等代码操作绝不会触及数据。
-DB_PATH = os.environ.get('PT_DB') or os.path.join(BASE_DIR, 'data.db')
+DB_PATH = os.path.join(BASE_DIR, 'data.db')
 
 # 仅允许访问这些静态文件（避免泄露 server.py / data.db 等）
 STATIC_FILES = {
@@ -61,9 +58,6 @@ def db():
 
 
 def init_db():
-    d = os.path.dirname(DB_PATH)
-    if d:
-        os.makedirs(d, exist_ok=True)
     conn = db()
     conn.executescript('''
     CREATE TABLE IF NOT EXISTS meta (
