@@ -13,6 +13,7 @@ const COURSES = {
   school: { label: '入校',   mode: 'perVisit' },
 };
 const COURSE_ORDER = ['cpp', 'python', 'school'];
+const WEEKDAYS = ['', '周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
 /* ---------- 工具 ---------- */
 function pad2(n) { return String(n).padStart(2, '0'); }
@@ -124,6 +125,7 @@ const state = {
   settings: { rates: { cpp: 30, python: 25 }, schoolMin: 100 },
   students: [],
   sessions: [],
+  schedule: [],
   detailId: null,
   editor: null,
   salaryMonth: curMonth(),
@@ -185,11 +187,12 @@ function bootError() {
   </div>`;
 }
 async function reloadData() {
-  const [students, sessions, settings] = await Promise.all([
-    api('/students'), api('/sessions'), api('/settings'),
+  const [students, sessions, settings, schedule] = await Promise.all([
+    api('/students'), api('/sessions'), api('/settings'), api('/schedule'),
   ]);
   state.students = students.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh'));
   state.sessions = sessions;
+  state.schedule = Array.isArray(schedule) ? schedule : [];
   state.settings = {
     rates: Object.assign({ cpp: 30, python: 25 }, (settings && settings.rates) || {}),
     schoolMin: (settings && settings.schoolMin) ?? 100,
@@ -213,7 +216,7 @@ function go(view) { state.view = view; window.scrollTo(0, 0); renderApp(); }
 function renderApp() {
   const app = document.getElementById('app');
   const titles = {
-    sessions: '课时记录', table: '记录表格', students: '学员', salary: '工资统计', settings: '设置',
+    sessions: '课时记录', schedule: '课程表', table: '记录表格', students: '学员', salary: '工资统计', settings: '设置',
     sessionDetail: '课程详情', sessionEdit: state.editor && state.editor.id ? '编辑记录' : '新增记录',
   };
   const showBack = ['sessionDetail', 'sessionEdit'].includes(state.view);
@@ -223,6 +226,7 @@ function renderApp() {
         <div class="brand"><span class="brand-ico">📋</span><span class="brand-name">课时工资</span></div>
         <nav class="nav">
           ${navItem('sessions', '📋', '记录')}
+          ${navItem('schedule', '📅', '课表')}
           ${navItem('table', '📊', '表格')}
           ${navItem('students', '👥', '学员')}
           ${navItem('salary', '💰', '工资')}
@@ -278,6 +282,7 @@ function renderView() {
   if (!v) return;
   switch (state.view) {
     case 'sessions': v.innerHTML = viewSessions(); bindSessions(v); break;
+    case 'schedule': v.innerHTML = viewSchedule(); bindSchedule(v); break;
     case 'table': v.innerHTML = viewTable(); bindTable(v); break;
     case 'sessionDetail': v.innerHTML = viewSessionDetail(); bindSessionDetail(v); break;
     case 'sessionEdit': v.innerHTML = viewSessionEdit(); bindSessionEdit(v); break;
@@ -385,7 +390,7 @@ async function deleteSession(s) {
 }
 
 /* ============================================================ 新增/编辑 */
-function startEditor(session) {
+function startEditor(session, prefill) {
   const selected = new Map();
   if (session && session.attendees) for (const a of session.attendees) selected.set(a.id, a.name);
   const rosterIds = new Set(state.students.map((s) => s.id));
@@ -396,8 +401,9 @@ function startEditor(session) {
     : [];
   state.editor = {
     id: session ? session.id : null,
-    dt: session ? (session.date + 'T' + (session.time || nowLocalDatetime().slice(11))) : nowLocalDatetime(),
-    courseType: session ? session.courseType : 'cpp',
+    dt: session ? (session.date + 'T' + (session.time || nowLocalDatetime().slice(11)))
+      : (prefill && prefill.time ? todayStr() + 'T' + (prefill.time.length === 5 ? prefill.time + ':00' : prefill.time) : nowLocalDatetime()),
+    courseType: session ? session.courseType : (prefill && prefill.courseType ? prefill.courseType : 'cpp'),
     selected, rosterExtra,
     extra: session ? (session.extra || 0) : 0,
     amount: session ? (session.amount ?? state.settings.schoolMin) : state.settings.schoolMin,
@@ -780,6 +786,85 @@ function exportCsv() {
   toast('已导出 ' + rows.length + ' 条记录');
 }
 
+/* ============================================================ 课程表（每周排课） */
+function viewSchedule() {
+  let html = `<div class="section-head"><h2>每周课程表</h2>${state.edit ? '<button class="btn btn-primary btn-sm" data-addsch>＋ 添加排课</button>' : ''}</div>`;
+  if (!state.schedule.length) {
+    html += `<div class="empty"><div class="big">📅</div><div>还没有排课</div>${state.edit ? '<div class="muted" style="margin-top:6px">把每周固定的上课安排加进来，方便随时查看与调整</div>' : ''}</div>`;
+    return html;
+  }
+  const byDay = {};
+  for (const e of state.schedule) (byDay[e.weekday] = byDay[e.weekday] || []).push(e);
+  for (let d = 1; d <= 7; d++) {
+    const items = (byDay[d] || []).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+    if (!items.length) continue;
+    html += `<div class="card"><p class="card-title">${WEEKDAYS[d]}</p>` + items.map((e) => {
+      const c = COURSES[e.courseType] || COURSES.cpp;
+      return `<div class="sch-row">
+        <span class="sch-time">${e.time || '--:--'}</span>
+        <span class="badge ${e.courseType}">${c.label}</span>
+        <span class="sch-title">${escapeHtml(e.title || '')}</span>
+        ${state.edit ? `<span class="sch-act">
+          <button class="icon-btn" data-rec="${e.id}" title="按这节课记录">＋</button>
+          <button class="icon-btn" data-edit="${e.id}" title="编辑">✎</button>
+          <button class="icon-btn" data-del="${e.id}" title="删除">✕</button>
+        </span>` : ''}
+      </div>`;
+    }).join('') + '</div>';
+  }
+  return html;
+}
+function bindSchedule(v) {
+  const add = $('[data-addsch]', v); if (add) add.onclick = () => openScheduleModal(null);
+  $all('[data-edit]', v).forEach((b) => { b.onclick = () => openScheduleModal(state.schedule.find((x) => x.id === b.dataset.edit)); });
+  $all('[data-del]', v).forEach((b) => { b.onclick = () => deleteSchedule(b.dataset.del); });
+  $all('[data-rec]', v).forEach((b) => {
+    b.onclick = () => { const e = state.schedule.find((x) => x.id === b.dataset.rec); if (e) startEditor(null, { courseType: e.courseType, time: e.time }); };
+  });
+}
+function openScheduleModal(entry) {
+  const editing = !!entry;
+  let course = editing ? entry.courseType : 'cpp';
+  const body = `<div class="form">
+    <label class="field"><span class="field-label">星期</span>
+      <select id="schWeekday">${[1, 2, 3, 4, 5, 6, 7].map((d) => `<option value="${d}" ${(editing ? entry.weekday : 1) === d ? 'selected' : ''}>${WEEKDAYS[d]}</option>`).join('')}</select></label>
+    <label class="field"><span class="field-label">时间</span><input type="time" id="schTime" value="${editing ? (entry.time || '') : ''}"></label>
+    <div class="field"><span class="field-label">课程类型</span>
+      <div class="seg" id="schCourse">${COURSE_ORDER.map((k) => `<button type="button" data-c="${k}" class="${course === k ? 'active' : ''}">${COURSES[k].label}</button>`).join('')}</div></div>
+    <label class="field"><span class="field-label">名称 / 备注（可选）</span><input type="text" id="schTitle" value="${editing ? escapeHtml(entry.title || '') : ''}" placeholder="如：三年级A班"></label>
+  </div>`;
+  const actions = [{ label: '取消', kind: 'ghost', close: true }];
+  if (editing) actions.push({ label: '删除', kind: 'danger', onClick: async () => { await deleteSchedule(entry.id); } });
+  actions.push({ label: '保存', kind: 'primary', onClick: async (m) => {
+    const obj = {
+      id: editing ? entry.id : uid(),
+      weekday: Number($('#schWeekday', m).value) || 1,
+      time: $('#schTime', m).value || '',
+      courseType: course,
+      title: $('#schTitle', m).value.trim(),
+    };
+    const next = editing ? state.schedule.map((x) => (x.id === entry.id ? obj : x)) : state.schedule.concat([obj]);
+    if (!(await saveSchedule(next))) return false;
+  } });
+  const modal = openModal(editing ? '编辑排课' : '添加排课', body, actions);
+  $all('#schCourse button', modal).forEach((b) => {
+    b.onclick = () => { course = b.dataset.c; $all('#schCourse button', modal).forEach((x) => x.classList.toggle('active', x.dataset.c === course)); };
+  });
+}
+async function saveSchedule(arr) {
+  try {
+    const r = await api('/schedule', { method: 'PUT', body: { schedule: arr }, auth: true });
+    state.schedule = Array.isArray(r) ? r : arr;
+    renderApp();
+    toast('已保存');
+    return true;
+  } catch (e) { handleErr(e, '保存失败'); return false; }
+}
+async function deleteSchedule(id) {
+  const next = state.schedule.filter((x) => x.id !== id);
+  if (await saveSchedule(next)) closeModal();
+}
+
 /* ============================================================ 设置 */
 function viewSettings() {
   const s = state.settings;
@@ -859,10 +944,16 @@ function bindSettings(v) {
   const dm = $('[data-demo]', v); if (dm) dm.onclick = loadDemo;
   const clr = $('[data-clear]', v);
   if (clr) clr.onclick = async () => {
-    if (!(await confirmDialog('清空所有数据？', '将删除全部记录、学员和照片（不含密码与单价），无法恢复。建议先下载数据库备份。'))) return;
-    if (!(await confirmDialog('再次确认', '真的要清空吗？此操作不可撤销。'))) return;
-    try { await api('/reset', { method: 'POST', auth: true }); await reloadData(); state.view = 'sessions'; renderApp(); toast('已清空'); }
-    catch (e) { handleErr(e, '操作失败'); }
+    if (!(await confirmDialog('清空所有数据？', '将删除全部记录、学员和照片（不含密码、单价与课程表），无法恢复。建议先下载数据库备份。'))) return;
+    if (state.hasPassword) {
+      openModal('确认清空', `<div class="form"><label class="field"><span class="field-label">请输入管理员密码以确认清空（不可恢复）</span><input type="password" id="rsPw" autocomplete="current-password"></label></div>`, [
+        { label: '取消', kind: 'ghost', close: true },
+        { label: '确认清空', kind: 'danger', onClick: async (m) => { if (!(await doReset($('#rsPw', m).value))) return false; } },
+      ]);
+      const inp = $('#rsPw'); if (inp) inp.onkeydown = (e) => { if (e.key === 'Enter') { const b = $('.modal-backdrop [data-act="1"]'); if (b) b.click(); } };
+    } else {
+      if (await confirmDialog('再次确认', '真的要清空吗？此操作不可撤销。')) doReset('');
+    }
   };
 }
 async function doDbDownload(pw) {
@@ -890,6 +981,22 @@ function downloadDb() {
   ]);
   const inp = $('#dlPw');
   if (inp) inp.onkeydown = (e) => { if (e.key === 'Enter') { const b = $('.modal-backdrop [data-act="1"]'); if (b) b.click(); } };
+}
+async function doReset(pw) {
+  try {
+    const res = await fetch('/api/reset', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, sessionStorage.getItem('pt_token') ? { Authorization: 'Bearer ' + sessionStorage.getItem('pt_token') } : {}),
+      body: JSON.stringify({ password: pw }),
+    });
+    if (res.status === 401) { toast('密码不正确'); return false; }
+    if (!res.ok) { toast('操作失败'); return false; }
+    await reloadData();
+    state.view = 'sessions';
+    renderApp();
+    toast('已清空');
+    return true;
+  } catch (e) { toast('操作失败：连接不上服务'); return false; }
 }
 async function loadDemo() {
   if (!(await confirmDialog('载入演示数据？', '会清空当前数据并写入一组示例（学员、课程、照片），仅供体验。之后可在「设置 → 清空所有数据」清掉。'))) return;

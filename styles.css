@@ -509,3 +509,11 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 .data-table .wd { color: var(--muted); margin-left: 6px; font-size: 12px; }
 .data-table .ell { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .data-table tfoot .tfoot td { border-top: 2px solid var(--ink); border-bottom: none; font-weight: 700; background: #fff; }
+
+/* ===== 课程表 ===== */
+.sch-row { display: flex; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.sch-row:last-child { border-bottom: none; }
+.sch-time { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 46px; }
+.sch-title { flex: 1; min-width: 0; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sch-act { display: flex; gap: 6px; flex-shrink: 0; }
+.sch-act .icon-btn { width: 32px; height: 32px; font-size: 14px; }

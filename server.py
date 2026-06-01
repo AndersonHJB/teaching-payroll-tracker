@@ -329,6 +329,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({'ok': ok}, 200 if ok else 401)
             if path == '/api/settings':
                 return self._json(json.loads(get_meta(conn, 'settings') or '{}'))
+            if path == '/api/schedule':
+                return self._json(json.loads(get_meta(conn, 'schedule') or '[]'))
             if path == '/api/students':
                 rows = conn.execute('SELECT * FROM students').fetchall()
                 return self._json([self._student(r) for r in rows])
@@ -474,8 +476,30 @@ class Handler(BaseHTTPRequestHandler):
                 conn.commit()
                 return self._json(settings)
 
-            # 清空全部数据（保留密码与设置）
+            # 课程表（每周排课，存为 meta 里的 JSON 数组）
+            if path == '/api/schedule' and method == 'PUT':
+                items = self._body().get('schedule') or []
+                clean = []
+                for it in items:
+                    ct = it.get('courseType')
+                    if ct not in ('cpp', 'python', 'school'):
+                        ct = 'cpp'
+                    clean.append({
+                        'id': str(it.get('id') or new_id()),
+                        'weekday': max(1, min(7, int(num(it.get('weekday'), 1)))),
+                        'time': str(it.get('time') or '')[:5],
+                        'courseType': ct,
+                        'title': str(it.get('title') or '')[:100],
+                    })
+                set_meta(conn, 'schedule', json.dumps(clean))
+                conn.commit()
+                return self._json(clean)
+
+            # 清空全部数据（保留密码与设置）；已设密码时需再次验证密码
             if path == '/api/reset' and method == 'POST':
+                stored = get_meta(conn, 'auth')
+                if stored and not verify_password(self._body().get('password', ''), stored):
+                    return self._json({'error': '密码不正确'}, 401)
                 conn.executescript('DELETE FROM photos; DELETE FROM attendance; '
                                    'DELETE FROM sessions; DELETE FROM students;')
                 conn.commit()
