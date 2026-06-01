@@ -39,6 +39,7 @@ Type=simple
 WorkingDirectory=/opt/teaching-payroll-tracker
 ExecStart=/usr/bin/python3 server.py 8000
 Environment=LOCAL_ONLY=1
+Environment=PT_DB=/var/lib/teaching-payroll/data.db
 Restart=always
 RestartSec=3
 User=www-data
@@ -47,8 +48,12 @@ User=www-data
 WantedBy=multi-user.target
 ```
 
-> `Environment=LOCAL_ONLY=1` 让服务只监听 `127.0.0.1`（仅本机），由 Nginx 反代对外暴露——这是推荐做法，外网不能直连后端端口。
-> 如果不打算用反向代理、想让服务直接对外，去掉这一行即可（监听 `0.0.0.0`）。
+> `Environment=PT_DB=...` 把数据库放到**仓库目录之外**（关键，见第 7 节）。先建好目录并授权：
+> ```bash
+> sudo mkdir -p /var/lib/teaching-payroll
+> sudo chown www-data:www-data /var/lib/teaching-payroll
+> ```
+> `Environment=LOCAL_ONLY=1` 让服务只监听 `127.0.0.1`（仅本机），由 Nginx 反代对外暴露——推荐做法，外网不能直连后端端口。不打算用反向代理就去掉这一行（监听 `0.0.0.0`）。
 
 启用并启动：
 
@@ -126,17 +131,17 @@ sudo certbot --nginx -d your-domain.com
 
 ## 5. 备份数据
 
-全部数据（含照片）都在 `data.db` 这一个文件里。
+全部数据（含照片）都在数据库这一个文件里（按上面的配置在 `/var/lib/teaching-payroll/data.db`）。
 
-- **手动**：直接复制 `data.db`。
+- **手动**：直接复制该 `data.db`。
 - **在网页里**：「设置 → 下载数据库（.db）」。
 - **定时备份**（cron，每天凌晨 3 点）：
 
 ```bash
-0 3 * * * cp /opt/teaching-payroll-tracker/data.db /backup/data-$(date +\%F).db
+0 3 * * * sqlite3 /var/lib/teaching-payroll/data.db ".backup '/backup/data-$(date +\%F).db'"
 ```
 
-> SQLite 用 WAL 模式，运行中直接复制 `data.db` 一般可用；若想要严格一致的快照，可用 `sqlite3 data.db ".backup /backup/data.db"`。
+> SQLite 用 WAL 模式，运行中用 `.backup` 命令能拿到严格一致的快照；直接 `cp` 一般也可用。
 
 ---
 
@@ -148,7 +153,20 @@ git pull
 sudo systemctl restart teaching-payroll
 ```
 
-`data.db` 不在仓库里（已被 `.gitignore` 忽略），更新代码不会动你的数据。
+更新代码**不会动你的数据**（原因见下一节）。
+
+---
+
+## 7. 数据库位置与更新安全（重要）
+
+更新代码时数据不会丢，有两道保障：
+
+1. **`data.db` 不在 git 里**：仓库的 `.gitignore` 已忽略 `data.db`（及 `-wal`/`-shm`），git 根本不跟踪它，所以 `git pull`、切分支、`git reset` 都不会覆盖或与它冲突。
+2. **数据库放在仓库目录之外**：按本文配置用 `PT_DB=/var/lib/teaching-payroll/data.db`，数据库**根本不在代码目录里**。即便误用 `git clean -fdx` 清理仓库，也波及不到它。
+
+> 强烈建议生产环境务必设置 `PT_DB` 指向仓库外的路径（如 `/var/lib/teaching-payroll/`）。不设置时默认在 `项目目录/data.db`（仅靠第 1 条保障，本地够用，但服务器更推荐放仓库外）。
+
+**关于数据库结构升级**：后续版本若需要改表结构，代码用的是**追加式**迁移（`CREATE TABLE IF NOT EXISTS`、`ALTER TABLE ADD COLUMN`），只会在你现有数据库上新增、**绝不删除已有数据**（例如本项目从"只有日期"升级到"日期+时间"时，就是自动给旧库补列、旧记录原样保留）。所以**直接 `git pull` + 重启即可，无需迁移已有的 SQLite 文件**。
 
 ---
 

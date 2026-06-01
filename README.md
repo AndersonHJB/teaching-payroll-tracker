@@ -77,7 +77,7 @@ python3 server.py 8080       # 指定端口
 | `index.html` / `styles.css` / `app.js` | 前端页面与逻辑 |
 | `manifest.webmanifest` / `icon.svg` | 图标与站点信息 |
 | `DEPLOY.md` | 服务器部署文档 |
-| `data.db` | 你的数据库（运行后生成，不入库） |
+| `data.db` | 你的数据库（运行后生成，已被 `.gitignore` 忽略；部署时建议用环境变量 `PT_DB` 指向仓库外路径） |
 
 ## 版本
 
