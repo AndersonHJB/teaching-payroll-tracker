@@ -292,7 +292,7 @@ function viewSessions() {
     </div>
     <div class="section-head"><h2>全部记录</h2>${state.edit ? '<button class="btn btn-primary btn-sm btn-add" data-add>＋ 新增记录</button>' : ''}</div>`;
   if (state.sessions.length === 0) {
-    html += `<div class="empty"><div class="big">📋</div><div>还没有上课记录</div>${state.edit ? '<div class="muted" style="margin-top:6px">点右上角「新增记录」开始</div>' : ''}</div>`;
+    html += `<div class="empty"><div class="big">📋</div><div>还没有上课记录</div>${state.edit ? '<div class="muted" style="margin-top:6px">点右上角「新增记录」开始，或先载入演示数据看看效果</div><button class="btn btn-ghost" style="margin-top:14px" data-demo>🎬 载入演示数据</button>' : ''}</div>`;
     return html;
   }
   const groups = {};
@@ -323,6 +323,7 @@ function sessionCard(s) {
 }
 function bindSessions(v) {
   const add = $('[data-add]', v); if (add) add.onclick = () => startEditor(null);
+  const dm = $('[data-demo]', v); if (dm) dm.onclick = loadDemo;
   $all('.session-card', v).forEach((el) => { el.onclick = () => { state.detailId = el.dataset.id; go('sessionDetail'); }; });
 }
 
@@ -800,13 +801,16 @@ function viewSettings() {
   const backupCard = `<div class="card"><p class="card-title">备份</p>
     <div class="muted" style="margin-bottom:12px">数据保存在服务端的 <strong>data.db</strong>（真实 SQLite 文件）。直接复制该文件即可备份；也可点下方按钮下载一份。</div>
     <div class="form"><button class="btn" data-export>⬇️ 下载数据库（.db）</button></div></div>`;
+  const demoCard = state.edit ? `<div class="card"><p class="card-title">演示数据</p>
+    <div class="muted" style="margin-bottom:12px">载入一组示例学员与课程记录（含照片）以便体验功能；会覆盖当前数据。</div>
+    <button class="btn" data-demo>🎬 载入演示数据</button></div>` : '';
   const dangerCard = state.edit ? `<div class="card"><p class="card-title">危险操作</p><button class="btn btn-danger btn-block" data-clear>清空所有记录与学员</button></div>` : '';
   const aboutCard = `<div class="card about"><p class="card-title">关于</p>
     <p><strong>数据存储：</strong>由本机运行的 Python 服务保存在 <strong>data.db</strong>（SQLite 文件）。清浏览器缓存不会丢，可用任意 SQLite 工具打开。</p>
     <p><strong>使用范围：</strong>需先启动本地服务（<span style="font-family:monospace">python3 server.py</span> 或双击 start.command），仅本机访问；手机不能直接打开。</p>
     <p><strong>编辑锁：</strong>密码用 PBKDF2 加盐保存在服务端，登录后用于区分预览/编辑。</p>
     <p class="muted" style="margin-top:8px">课时工资记录 · 本地 SQLite 版</p></div>`;
-  return lockCard + ratesCard + backupCard + dangerCard + aboutCard;
+  return lockCard + ratesCard + backupCard + demoCard + dangerCard + aboutCard;
 }
 function bindSettings(v) {
   const setpw = $('[data-setpw]', v);
@@ -843,6 +847,7 @@ function bindSettings(v) {
     } catch (e) { handleErr(e, '保存失败'); }
   };
   const exp = $('[data-export]', v); if (exp) exp.onclick = downloadDb;
+  const dm = $('[data-demo]', v); if (dm) dm.onclick = loadDemo;
   const clr = $('[data-clear]', v);
   if (clr) clr.onclick = async () => {
     if (!(await confirmDialog('清空所有数据？', '将删除全部记录、学员和照片（不含密码与单价），无法恢复。建议先下载数据库备份。'))) return;
@@ -856,12 +861,18 @@ async function downloadDb() {
   try {
     const res = await api('/db', { auth: true, raw: true });
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'course-data.db';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadBlob(blob, 'course-data.db');
   } catch (e) { handleErr(e, '导出失败'); }
+}
+async function loadDemo() {
+  if (!(await confirmDialog('载入演示数据？', '会清空当前数据并写入一组示例（学员、课程、照片），仅供体验。之后可在「设置 → 清空所有数据」清掉。'))) return;
+  try {
+    await api('/demo', { method: 'POST', auth: true });
+    await reloadData();
+    state.view = 'sessions';
+    renderApp();
+    toast('已载入演示数据');
+  } catch (e) { handleErr(e, '载入失败'); }
 }
 
 /* ============================================================ 通用组件 */

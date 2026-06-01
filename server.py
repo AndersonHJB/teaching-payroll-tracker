@@ -15,7 +15,10 @@ import os
 import sys
 import json
 import time
+import datetime
 import base64
+import struct
+import zlib
 import hmac
 import hashlib
 import secrets
@@ -150,6 +153,62 @@ def verify_password(pw, stored):
         return hmac.compare_digest(dk.hex(), hash_hex)
     except Exception:
         return False
+
+
+# ---------- 演示数据 ----------
+def _png_solid(w, h, rgb):
+    """用标准库生成一张纯色 PNG（演示照片，无需第三方依赖）。"""
+    def chunk(typ, data):
+        return (struct.pack('>I', len(data)) + typ + data
+                + struct.pack('>I', zlib.crc32(typ + data) & 0xffffffff))
+    sig = b'\x89PNG\r\n\x1a\n'
+    ihdr = struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)  # 8 位、RGB
+    row = b'\x00' + bytes(rgb) * w
+    idat = zlib.compress(row * h, 9)
+    return sig + chunk(b'IHDR', ihdr) + chunk(b'IDAT', idat) + chunk(b'IEND', b'')
+
+
+def seed_demo(conn):
+    """清空并写入一组演示数据（学员、课程、照片），用于体验。"""
+    conn.executescript('DELETE FROM photos; DELETE FROM attendance; DELETE FROM sessions; DELETE FROM students;')
+    names = ['王小明', '李华', '张伟', '刘洋', '陈晨', '赵雷', '孙悦', '周杰']
+    sids = {}
+    base = now_ms()
+    for i, n in enumerate(names):
+        sid = new_id()
+        sids[n] = sid
+        conn.execute('INSERT INTO students(id,name,note,active,created_at) VALUES(?,?,?,1,?)', (sid, n, '', base + i))
+    today = datetime.date.today()
+    # (距今天数, 课程, 出勤名单, 不记名人数, 入校金额, 备注, 照片颜色列表)
+    plan = [
+        (0,  'cpp',    ['王小明', '李华', '张伟', '刘洋', '陈晨'], 0, 0, 'C++ 第9讲：结构体', [(37, 99, 235)]),
+        (0,  'python', ['赵雷', '孙悦', '周杰'], 0, 0, 'Python 文件操作', []),
+        (1,  'cpp',    ['王小明', '李华', '张伟', '刘洋'], 0, 0, 'C++ 第8讲：指针与数组', [(37, 99, 235), (16, 150, 90)]),
+        (3,  'python', ['陈晨', '赵雷', '孙悦'], 0, 0, 'Python 爬虫入门', []),
+        (5,  'school', [], 0, 200, '第三实验小学 编程社团', [(217, 119, 6)]),
+        (8,  'cpp',    ['王小明', '李华', '刘洋', '周杰', '陈晨'], 0, 0, 'C++ 第7讲：函数', []),
+        (12, 'python', ['张伟', '孙悦', '周杰'], 1, 0, 'Python 列表与字典', []),
+        (15, 'school', [], 0, 150, '阳光中学 入校课', []),
+        (18, 'cpp',    ['王小明', '李华', '张伟'], 0, 0, 'C++ 第6讲：循环', []),
+        (22, 'python', ['陈晨', '赵雷', '孙悦', '刘洋'], 0, 0, 'Python 函数与模块', [(124, 58, 237)]),
+        (26, 'cpp',    ['王小明', '周杰'], 2, 0, 'C++ 一对二补课', []),
+        (33, 'school', [], 0, 300, '第三实验小学 公开课', []),
+        (38, 'python', ['李华', '张伟', '孙悦'], 0, 0, 'Python 基础语法', []),
+        (45, 'cpp',    ['王小明', '李华', '张伟', '刘洋', '陈晨', '赵雷'], 0, 0, 'C++ 第5讲：变量与类型', []),
+    ]
+    ts = now_ms()
+    for off, course, atts, extra, amount, note, colors in plan:
+        sid = new_id()
+        when = ts - off * 86400000
+        conn.execute('INSERT INTO sessions(id,date,course_type,extra,amount,note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
+                     (sid, (today - datetime.timedelta(days=off)).isoformat(), course, extra,
+                      amount if course == 'school' else 0, note, when, when))
+        for n in atts:
+            conn.execute('INSERT OR REPLACE INTO attendance(session_id,student_id,name) VALUES(?,?,?)', (sid, sids[n], n))
+        for col in colors:
+            conn.execute('INSERT INTO photos(id,session_id,w,h,mime,data,created_at) VALUES(?,?,?,?,?,?,?)',
+                         (new_id(), sid, 800, 600, 'image/png', sqlite3.Binary(_png_solid(800, 600, col)), ts))
+    conn.commit()
 
 
 # ---------- HTTP 处理 ----------
@@ -411,6 +470,11 @@ class Handler(BaseHTTPRequestHandler):
                 conn.executescript('DELETE FROM photos; DELETE FROM attendance; '
                                    'DELETE FROM sessions; DELETE FROM students;')
                 conn.commit()
+                return self._json({'ok': True})
+
+            # 载入演示数据（清空后写入示例）
+            if path == '/api/demo' and method == 'POST':
+                seed_demo(conn)
                 return self._json({'ok': True})
 
             return self._json({'error': 'not found'}, 404)
