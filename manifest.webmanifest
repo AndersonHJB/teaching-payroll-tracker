@@ -1,0 +1,15 @@
+{
+  "name": "课时工资记录",
+  "short_name": "课时记录",
+  "description": "记录上课日期、出勤学员与上课照片，按出勤人头自动计算工资。",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5f9",
+  "theme_color": "#2563eb",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
