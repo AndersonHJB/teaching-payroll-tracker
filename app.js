@@ -40,6 +40,12 @@ function fmtDateCN(s) {
   const w = weekdayCN(s);
   return s + (w ? ' ' + w : '');
 }
+function fmtClock(t) { return t ? String(t).slice(0, 5) : ''; }  // HH:MM
+function nowLocalDatetime() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 function csvCell(v) {
   v = String(v == null ? '' : v);
   return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
@@ -314,7 +320,7 @@ function sessionCard(s) {
   const photo = (s.photoIds && s.photoIds.length) ? `<span class="sc-photo">📷 ${s.photoIds.length}</span>` : '';
   return `<div class="session-card" data-id="${s.id}">
     <div class="sc-main">
-      <div class="sc-top"><span class="sc-date">${fmtDateCN(s.date)}</span><span class="badge ${s.courseType}">${c.label}</span></div>
+      <div class="sc-top"><span class="sc-date">${fmtDateCN(s.date)}${s.time ? ' ' + fmtClock(s.time) : ''}</span><span class="badge ${s.courseType}">${c.label}</span></div>
       <div class="sc-meta">${meta} ${photo}</div>
     </div>
     <div class="sc-pay">${fmtMoney(sessionPay(s))}</div>
@@ -353,7 +359,7 @@ function viewSessionDetail() {
   return `
     <div class="card">
       <div class="row-between" style="margin-bottom:10px">
-        <span class="badge ${s.courseType}">${c.label}</span><span class="muted">${fmtDateCN(s.date)}</span>
+        <span class="badge ${s.courseType}">${c.label}</span><span class="muted">${fmtDateCN(s.date)}${s.time ? ' ' + s.time : ''}</span>
       </div>
       <div class="detail-pay">${fmtMoney(sessionPay(s))}</div>
     </div>
@@ -390,7 +396,7 @@ function startEditor(session) {
     : [];
   state.editor = {
     id: session ? session.id : null,
-    date: session ? session.date : todayStr(),
+    dt: session ? (session.date + 'T' + (session.time || nowLocalDatetime().slice(11))) : nowLocalDatetime(),
     courseType: session ? session.courseType : 'cpp',
     selected, rosterExtra,
     extra: session ? (session.extra || 0) : 0,
@@ -409,7 +415,7 @@ function viewSessionEdit() {
   const isSchool = e.courseType === 'school';
   return `
     <form class="form" id="sessForm">
-      <label class="field"><span class="field-label">日期</span><input type="date" name="date" value="${e.date}" required></label>
+      <label class="field"><span class="field-label">日期与时间</span><input type="datetime-local" name="dt" step="1" value="${e.dt}" required></label>
       <div class="field"><span class="field-label">课程类型</span>
         <div class="seg" id="segCourse">${COURSE_ORDER.map((k) => `<button type="button" data-c="${k}" class="${e.courseType === k ? 'active' : ''}">${COURSES[k].label}</button>`).join('')}</div>
       </div>
@@ -547,11 +553,14 @@ function renderPhotoGrid(v) {
 async function saveSession(v) {
   const e = state.editor;
   const btn = $('#saveBtn', v);
-  const date = $('[name="date"]', v).value;
-  if (!date) { toast('请选择日期'); return; }
+  const dt = $('[name="dt"]', v).value;
+  if (!dt) { toast('请选择日期与时间'); return; }
+  const date = dt.slice(0, 10);
+  let time = dt.length > 10 ? dt.slice(11) : '';
+  if (time.length === 5) time += ':00';  // HH:MM -> HH:MM:SS
   const note = $('[name="note"]', v).value.trim();
   const attendees = Array.from(e.selected, ([id, name]) => ({ id, name }));
-  const payload = { date, courseType: e.courseType, note, attendees };
+  const payload = { date, time, courseType: e.courseType, note, attendees };
   if (e.courseType === 'school') {
     const amount = Number($('[name="amount"]', v).value) || 0;
     if (amount <= 0) { toast('请填写入校金额'); return; }
@@ -712,7 +721,7 @@ function viewTable() {
     const rate = isSchool ? '<span class="muted">按次</span>' : ('¥' + (state.settings.rates[s.courseType] ?? c.defaultRate));
     const names = (s.attendees || []).map((a) => a.name).join('、');
     return `<tr data-id="${s.id}">
-      <td class="nowrap">${s.date}<span class="wd">${weekdayCN(s.date)}</span></td>
+      <td class="nowrap">${s.date}<span class="wd">${weekdayCN(s.date)}${s.time ? ' ' + fmtClock(s.time) : ''}</span></td>
       <td><span class="badge ${s.courseType}">${c.label}</span></td>
       <td class="num">${isSchool ? '<span class="muted">—</span>' : sessionHeads(s)}</td>
       <td><span class="ell" title="${escapeHtml(names)}">${names ? escapeHtml(names) : '<span class="muted">—</span>'}</span></td>
@@ -749,7 +758,7 @@ function bindTable(v) {
 function exportCsv() {
   const rows = filteredTableRows();
   if (!rows.length) { toast('没有可导出的记录'); return; }
-  const header = ['日期', '星期', '课程', '出勤人数', '学员', '单价(元)', '金额(元)', '照片数', '备注'];
+  const header = ['日期', '时间', '星期', '课程', '出勤人数', '学员', '单价(元)', '金额(元)', '照片数', '备注'];
   const data = [header];
   let totHeads = 0, totPay = 0;
   for (const s of rows) {
@@ -758,14 +767,14 @@ function exportCsv() {
     if (!isSchool) totHeads += sessionHeads(s);
     totPay += sessionPay(s);
     data.push([
-      s.date, weekdayCN(s.date), c.label,
+      s.date, s.time || '', weekdayCN(s.date), c.label,
       isSchool ? '' : sessionHeads(s),
       (s.attendees || []).map((a) => a.name).join(' '),
       isSchool ? '按次' : (state.settings.rates[s.courseType] ?? c.defaultRate),
       sessionPay(s), (s.photoIds || []).length, s.note || '',
     ]);
   }
-  data.push(['合计', '', '', totHeads, '', '', totPay, '', '']);
+  data.push(['合计', '', '', '', totHeads, '', '', totPay, '', '']);
   const csv = data.map((r) => r.map(csvCell).join(',')).join('\r\n');
   downloadBlob(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), `课时记录-${todayStr()}.csv`);
   toast('已导出 ' + rows.length + ' 条记录');

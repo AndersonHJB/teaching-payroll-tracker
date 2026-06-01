@@ -74,6 +74,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         date TEXT NOT NULL,
+        start_time TEXT DEFAULT '',
         course_type TEXT NOT NULL,
         extra INTEGER NOT NULL DEFAULT 0,
         amount REAL NOT NULL DEFAULT 0,
@@ -100,6 +101,10 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_att_session ON attendance(session_id);
     CREATE INDEX IF NOT EXISTS idx_photos_session ON photos(session_id);
     ''')
+    # 迁移：为旧库补上 start_time 列
+    cols = [r[1] for r in conn.execute('PRAGMA table_info(sessions)').fetchall()]
+    if 'start_time' not in cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN start_time TEXT DEFAULT ''")
     if conn.execute("SELECT 1 FROM meta WHERE key='settings'").fetchone() is None:
         conn.execute("INSERT INTO meta(key, value) VALUES('settings', ?)",
                      (json.dumps({'rates': {'cpp': 30, 'python': 25}, 'schoolMin': 100}),))
@@ -197,11 +202,12 @@ def seed_demo(conn):
         (45, 'cpp',    ['王小明', '李华', '张伟', '刘洋', '陈晨', '赵雷'], 0, 0, 'C++ 第5讲：变量与类型', []),
     ]
     ts = now_ms()
+    clock = {'cpp': '18:30:00', 'python': '20:00:00', 'school': '10:15:00'}
     for off, course, atts, extra, amount, note, colors in plan:
         sid = new_id()
         when = ts - off * 86400000
-        conn.execute('INSERT INTO sessions(id,date,course_type,extra,amount,note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
-                     (sid, (today - datetime.timedelta(days=off)).isoformat(), course, extra,
+        conn.execute('INSERT INTO sessions(id,date,start_time,course_type,extra,amount,note,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+                     (sid, (today - datetime.timedelta(days=off)).isoformat(), clock.get(course, ''), course, extra,
                       amount if course == 'school' else 0, note, when, when))
         for n in atts:
             conn.execute('INSERT OR REPLACE INTO attendance(session_id,student_id,name) VALUES(?,?,?)', (sid, sids[n], n))
@@ -281,9 +287,9 @@ class Handler(BaseHTTPRequestHandler):
         for r in conn.execute('SELECT id, session_id FROM photos ORDER BY created_at'):
             ph.setdefault(r['session_id'], []).append(r['id'])
         out = []
-        for s in conn.execute('SELECT * FROM sessions ORDER BY date DESC, created_at DESC'):
+        for s in conn.execute('SELECT * FROM sessions ORDER BY date DESC, start_time DESC, created_at DESC'):
             out.append({
-                'id': s['id'], 'date': s['date'], 'courseType': s['course_type'],
+                'id': s['id'], 'date': s['date'], 'time': s['start_time'] or '', 'courseType': s['course_type'],
                 'extra': int(s['extra'] or 0), 'amount': s['amount'], 'note': s['note'] or '',
                 'createdAt': s['created_at'], 'updatedAt': s['updated_at'],
                 'attendees': att.get(s['id'], []), 'photoIds': ph.get(s['id'], []),
@@ -487,6 +493,7 @@ class Handler(BaseHTTPRequestHandler):
         b = self._body()
         course = b.get('courseType', 'cpp')
         date = b.get('date', '')
+        start_time = (b.get('time') or '')[:8]
         extra = int(round(num(b.get('extra'), 0)))
         amount = num(b.get('amount'), 0) if course == 'school' else 0
         note = b.get('note') or ''
@@ -494,11 +501,11 @@ class Handler(BaseHTTPRequestHandler):
         ts = now_ms()
         if sid is None:
             sid = new_id()
-            conn.execute('INSERT INTO sessions(id, date, course_type, extra, amount, note, created_at, updated_at) '
-                         'VALUES(?,?,?,?,?,?,?,?)', (sid, date, course, extra, amount, note, ts, ts))
+            conn.execute('INSERT INTO sessions(id, date, start_time, course_type, extra, amount, note, created_at, updated_at) '
+                         'VALUES(?,?,?,?,?,?,?,?,?)', (sid, date, start_time, course, extra, amount, note, ts, ts))
         else:
-            conn.execute('UPDATE sessions SET date=?, course_type=?, extra=?, amount=?, note=?, updated_at=? WHERE id=?',
-                         (date, course, extra, amount, note, ts, sid))
+            conn.execute('UPDATE sessions SET date=?, start_time=?, course_type=?, extra=?, amount=?, note=?, updated_at=? WHERE id=?',
+                         (date, start_time, course, extra, amount, note, ts, sid))
         conn.execute('DELETE FROM attendance WHERE session_id=?', (sid,))
         for a in attendees:
             if a.get('id'):
