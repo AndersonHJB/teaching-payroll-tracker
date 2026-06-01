@@ -31,12 +31,25 @@ function stepMonth(ym, delta) {
 }
 function monthLabel(ym) { const [y, m] = ym.split('-'); return `${y}年${Number(m)}月`; }
 function fmtMoney(n) { n = Math.round((Number(n) || 0) * 100) / 100; return '¥' + n.toLocaleString('zh-CN'); }
+function weekdayCN(s) {
+  const wd = ['日', '一', '二', '三', '四', '五', '六'];
+  try { return '周' + wd[new Date(s + 'T00:00:00').getDay()]; } catch (e) { return ''; }
+}
 function fmtDateCN(s) {
   if (!s) return '';
-  const wd = ['日', '一', '二', '三', '四', '五', '六'];
-  let w = '';
-  try { w = ' 周' + wd[new Date(s + 'T00:00:00').getDay()]; } catch (e) {}
-  return s + w;
+  const w = weekdayCN(s);
+  return s + (w ? ' ' + w : '');
+}
+function csvCell(v) {
+  v = String(v == null ? '' : v);
+  return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
@@ -108,6 +121,8 @@ const state = {
   detailId: null,
   editor: null,
   salaryMonth: curMonth(),
+  tableCourse: 'all',
+  tableMonth: 'all',
 };
 
 /* ---------- 计算 ---------- */
@@ -192,7 +207,7 @@ function go(view) { state.view = view; window.scrollTo(0, 0); renderApp(); }
 function renderApp() {
   const app = document.getElementById('app');
   const titles = {
-    sessions: '课时记录', students: '学员', salary: '工资统计', settings: '设置',
+    sessions: '课时记录', table: '记录表格', students: '学员', salary: '工资统计', settings: '设置',
     sessionDetail: '课程详情', sessionEdit: state.editor && state.editor.id ? '编辑记录' : '新增记录',
   };
   const showBack = ['sessionDetail', 'sessionEdit'].includes(state.view);
@@ -202,6 +217,7 @@ function renderApp() {
         <div class="brand"><span class="brand-ico">📋</span><span class="brand-name">课时工资</span></div>
         <nav class="nav">
           ${navItem('sessions', '📋', '记录')}
+          ${navItem('table', '📊', '表格')}
           ${navItem('students', '👥', '学员')}
           ${navItem('salary', '💰', '工资')}
           ${navItem('settings', '⚙️', '设置')}
@@ -256,6 +272,7 @@ function renderView() {
   if (!v) return;
   switch (state.view) {
     case 'sessions': v.innerHTML = viewSessions(); bindSessions(v); break;
+    case 'table': v.innerHTML = viewTable(); bindTable(v); break;
     case 'sessionDetail': v.innerHTML = viewSessionDetail(); bindSessionDetail(v); break;
     case 'sessionEdit': v.innerHTML = viewSessionEdit(); bindSessionEdit(v); break;
     case 'students': v.innerHTML = viewStudents(); bindStudents(v); break;
@@ -406,8 +423,8 @@ function viewSessionEdit() {
         <input type="number" name="amount" min="0" step="1" value="${e.amount}"><span class="hint" id="amountHint"></span>
       </label>
       <label class="field"><span class="field-label">备注（可选）</span><textarea name="note" rows="2" placeholder="教学内容、班级、学校名称等">${escapeHtml(e.note)}</textarea></label>
-      <div class="field"><span class="field-label">上课照片</span><div class="photo-grid" id="photoGrid"></div>
-        <label class="btn btn-ghost photo-add">＋ 添加照片<input type="file" id="photoInput" accept="image/*" multiple hidden></label></div>
+      <div class="field"><span class="field-label">上课照片 <span class="muted">（可截图后 ⌘/Ctrl+V 直接粘贴）</span></span><div class="photo-grid" id="photoGrid"></div>
+        <label class="btn btn-ghost photo-add">＋ 添加照片 / 粘贴<input type="file" id="photoInput" accept="image/*" multiple hidden></label></div>
       <div class="pay-preview" id="payPreview"></div>
       <div class="form-actions"><button type="button" class="btn btn-ghost" data-back>取消</button><button type="submit" class="btn btn-primary" id="saveBtn">保存</button></div>
     </form>`;
@@ -657,6 +674,102 @@ function bindSalary(v) {
   $all('.mini-row', v).forEach((el) => { el.onclick = () => { state.detailId = el.dataset.id; go('sessionDetail'); }; });
 }
 
+/* ============================================================ 记录表格（类 Excel） */
+function filteredTableRows() {
+  return state.sessions.filter((s) =>
+    (state.tableCourse === 'all' || s.courseType === state.tableCourse) &&
+    (state.tableMonth === 'all' || monthOf(s.date) === state.tableMonth));
+}
+function viewTable() {
+  const rows = filteredTableRows();
+  const months = Array.from(new Set(state.sessions.map((s) => monthOf(s.date)).filter(Boolean))).sort((a, b) => b.localeCompare(a));
+  const filters = [['all', '全部'], ['cpp', 'C++'], ['python', 'Python'], ['school', '入校']];
+  const toolbar = `
+    <div class="toolbar">
+      <div class="seg seg-sm" id="tblCourse">
+        ${filters.map(([k, l]) => `<button type="button" data-c="${k}" class="${state.tableCourse === k ? 'active' : ''}">${l}</button>`).join('')}
+      </div>
+      <div class="toolbar-right">
+        <select id="tblMonth" class="sel-sm">
+          <option value="all" ${state.tableMonth === 'all' ? 'selected' : ''}>全部月份</option>
+          ${months.map((m) => `<option value="${m}" ${state.tableMonth === m ? 'selected' : ''}>${monthLabel(m)}</option>`).join('')}
+        </select>
+        <button class="btn btn-sm" data-export-csv>⬇️ 导出 Excel</button>
+      </div>
+    </div>`;
+  if (!rows.length) {
+    return toolbar + '<div class="empty"><div class="big">📊</div><div>没有符合条件的记录</div></div>';
+  }
+  let totHeads = 0, totPay = 0, totPhotos = 0;
+  const body = rows.map((s) => {
+    const c = COURSES[s.courseType];
+    const isSchool = s.courseType === 'school';
+    if (!isSchool) totHeads += sessionHeads(s);
+    totPay += sessionPay(s);
+    const np = (s.photoIds || []).length;
+    totPhotos += np;
+    const rate = isSchool ? '<span class="muted">按次</span>' : ('¥' + (state.settings.rates[s.courseType] ?? c.defaultRate));
+    const names = (s.attendees || []).map((a) => a.name).join('、');
+    return `<tr data-id="${s.id}">
+      <td class="nowrap">${s.date}<span class="wd">${weekdayCN(s.date)}</span></td>
+      <td><span class="badge ${s.courseType}">${c.label}</span></td>
+      <td class="num">${isSchool ? '<span class="muted">—</span>' : sessionHeads(s)}</td>
+      <td><span class="ell" title="${escapeHtml(names)}">${names ? escapeHtml(names) : '<span class="muted">—</span>'}</span></td>
+      <td class="num">${rate}</td>
+      <td class="num pay">${fmtMoney(sessionPay(s))}</td>
+      <td class="num">${np || ''}</td>
+      <td><span class="ell" title="${escapeHtml(s.note || '')}">${escapeHtml(s.note || '')}</span></td>
+    </tr>`;
+  }).join('');
+  return toolbar + `
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead><tr>
+          <th>日期</th><th>课程</th><th class="num">出勤</th><th>学员</th><th class="num">单价</th><th class="num">金额</th><th class="num">照片</th><th>备注</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr class="tfoot">
+          <td colspan="2">合计 ${rows.length} 节</td>
+          <td class="num">${totHeads}</td>
+          <td></td><td></td>
+          <td class="num pay">${fmtMoney(totPay)}</td>
+          <td class="num">${totPhotos || ''}</td>
+          <td></td>
+        </tr></tfoot>
+      </table>
+    </div>`;
+}
+function bindTable(v) {
+  $all('#tblCourse button', v).forEach((b) => { b.onclick = () => { state.tableCourse = b.dataset.c; renderApp(); }; });
+  const ms = $('#tblMonth', v); if (ms) ms.onchange = () => { state.tableMonth = ms.value; renderApp(); };
+  const ex = $('[data-export-csv]', v); if (ex) ex.onclick = exportCsv;
+  $all('tbody tr[data-id]', v).forEach((tr) => { tr.onclick = () => { state.detailId = tr.dataset.id; go('sessionDetail'); }; });
+}
+function exportCsv() {
+  const rows = filteredTableRows();
+  if (!rows.length) { toast('没有可导出的记录'); return; }
+  const header = ['日期', '星期', '课程', '出勤人数', '学员', '单价(元)', '金额(元)', '照片数', '备注'];
+  const data = [header];
+  let totHeads = 0, totPay = 0;
+  for (const s of rows) {
+    const c = COURSES[s.courseType];
+    const isSchool = s.courseType === 'school';
+    if (!isSchool) totHeads += sessionHeads(s);
+    totPay += sessionPay(s);
+    data.push([
+      s.date, weekdayCN(s.date), c.label,
+      isSchool ? '' : sessionHeads(s),
+      (s.attendees || []).map((a) => a.name).join(' '),
+      isSchool ? '按次' : (state.settings.rates[s.courseType] ?? c.defaultRate),
+      sessionPay(s), (s.photoIds || []).length, s.note || '',
+    ]);
+  }
+  data.push(['合计', '', '', totHeads, '', '', totPay, '', '']);
+  const csv = data.map((r) => r.map(csvCell).join(',')).join('\r\n');
+  downloadBlob(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }), `课时记录-${todayStr()}.csv`);
+  toast('已导出 ' + rows.length + ' 条记录');
+}
+
 /* ============================================================ 设置 */
 function viewSettings() {
   const s = state.settings;
@@ -816,6 +929,25 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.remove(), 2200);
 }
+
+/* ---------- 全局粘贴上传（编辑记录时，⌘/Ctrl+V 粘贴截图） ---------- */
+function onGlobalPaste(e) {
+  if (state.view !== 'sessionEdit' || !state.editor) return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  const files = [];
+  for (const it of items) {
+    if (it.type && it.type.indexOf('image/') === 0) {
+      const f = it.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  if (files.length) {
+    e.preventDefault();
+    const view = document.getElementById('view');
+    if (view) { onPhotoPick(files, view); toast('已粘贴 ' + files.length + ' 张图片'); }
+  }
+}
+document.addEventListener('paste', onGlobalPaste);
 
 /* ---------- 启动 ---------- */
 boot();

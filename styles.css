@@ -178,6 +178,7 @@ body {
   .view-settings { max-width: 720px; }
   .view-sessionEdit > .form { max-width: 600px; margin: 0 auto; }
   .view-settings .card .form { max-width: 460px; }
+  .view-table { max-width: none; }
 
   /* 记录列表：多列卡片，月份标题占整行 */
   .view-sessions .month-group {
@@ -480,3 +481,31 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 
 .spin { display: inline-block; width: 16px; height: 16px; border: 2px solid #cbd5e1; border-top-color: var(--primary); border-radius: 999px; animation: spin .7s linear infinite; vertical-align: middle; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== 记录表格（类 Excel） ===== */
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.seg-sm { gap: 6px; }
+.seg-sm button { flex: none; padding: 8px 14px; min-height: 38px; font-size: 13px; border-radius: 9px; }
+.sel-sm { width: auto; padding: 8px 10px; font-size: 14px; border: 1px solid var(--line); border-radius: 9px; min-height: 38px; background: #fff; color: var(--ink); }
+
+.table-wrap {
+  overflow-x: auto;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  -webkit-overflow-scrolling: touch;
+}
+.data-table { width: 100%; border-collapse: collapse; font-size: 14px; white-space: nowrap; }
+.data-table th, .data-table td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--line); }
+.data-table thead th {
+  background: #f8fafc; position: sticky; top: 0; z-index: 1;
+  font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em;
+}
+.data-table tbody tr { cursor: pointer; }
+.data-table tbody tr:hover { background: #f8fafc; }
+.data-table td.num, .data-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.data-table .pay { font-weight: 700; }
+.data-table .wd { color: var(--muted); margin-left: 6px; font-size: 12px; }
+.data-table .ell { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.data-table tfoot .tfoot td { border-top: 2px solid var(--ink); border-bottom: none; font-weight: 700; background: #fff; }
